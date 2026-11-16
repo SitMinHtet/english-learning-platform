@@ -11,6 +11,18 @@ import type {
   WeeklyAiPack,
 } from '../types'
 import { localDayKey, localWeekKey } from './dateKey'
+import {
+  canUseAiDaily as canUseAiDailyClient,
+  canUseAiWeekly as canUseAiWeeklyClient,
+  chatCompletions,
+  extractJsonObject,
+} from './aiClient'
+import type { AiKind } from './aiConfig'
+
+export {
+  canUseAiDailyClient as canUseAiDaily,
+  canUseAiWeeklyClient as canUseAiWeekly,
+}
 
 const SKILLS: Skill[] = [
   'listening',
@@ -20,14 +32,17 @@ const SKILLS: Skill[] = [
   'writing',
 ]
 
-/** Target counts for AI daily pack (20–30 per skill) */
+/** Target counts for AI daily pack (chunked to avoid truncated JSON) */
 export const AI_DAILY_COUNTS: Record<Skill, number> = {
-  listening: 24,
-  speaking: 24,
-  pronunciation: 24,
-  reading: 24,
-  writing: 24,
+  listening: 16,
+  speaking: 16,
+  pronunciation: 16,
+  reading: 16,
+  writing: 16,
 }
+
+/** Max items per API call — keeps responses under max_tokens */
+const AI_CHUNK = 8
 
 export const AI_STORY_COUNT = 3
 export const AI_VOCAB_COUNT = 16
@@ -35,61 +50,27 @@ export const AI_WEEKLY_COUNT = 15
 
 export type AiProgressFn = (msg: string) => void
 
-export function canUseAiDaily(settings: TutorSettings): boolean {
-  return !!(settings.useAiDaily && settings.apiKey.trim())
-}
-
-export function canUseAiWeekly(settings: TutorSettings): boolean {
-  return !!settings.apiKey.trim()
-}
-
-function extractJson(text: string): unknown {
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start >= 0 && end > start) {
-    return JSON.parse(text.slice(start, end + 1))
-  }
-  return JSON.parse(text)
-}
-
 async function chatJson(
   settings: TutorSettings,
   system: string,
   user: string,
+  kind: AiKind = 'daily',
 ): Promise<unknown> {
-  const base = settings.baseUrl.replace(/\/$/, '')
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${settings.apiKey}`,
-  }
-
   const tryOnce = async (withFormat: boolean) => {
-    const res = await fetch(`${base}/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: settings.model,
-        temperature: 0.65,
-        ...(withFormat ? { response_format: { type: 'json_object' } } : {}),
-        messages: [
-          {
-            role: 'system',
-            content: withFormat ? system : `${system}\nReturn ONLY valid JSON.`,
-          },
-          { role: 'user', content: user },
-        ],
-      }),
+    const raw = await chatCompletions({
+      kind,
+      settings,
+      temperature: 0.65,
+      responseFormatJson: withFormat,
+      messages: [
+        {
+          role: 'system',
+          content: withFormat ? system : `${system}\nReturn ONLY valid JSON.`,
+        },
+        { role: 'user', content: user },
+      ],
     })
-    if (!res.ok) {
-      const t = await res.text()
-      throw new Error(`${res.status}: ${t.slice(0, 160)}`)
-    }
-    const data = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>
-    }
-    const raw = data.choices?.[0]?.message?.content?.trim()
-    if (!raw) throw new Error('Empty AI response')
-    return extractJson(raw)
+    return extractJsonObject(raw)
   }
 
   try {
@@ -270,26 +251,31 @@ Never use any other language. Return ONLY valid JSON.`
             ? `{"questions":[{"prompt":"Say: \\"...\\"","promptMy":"...","answer":"exact sentence to say","explanationMy":"...","tipsMy":"..."}]}`
             : `{"questions":[{"prompt":"Pronounce: \\"...\\"","promptMy":"...","answer":"exact phrase","explanationMy":"...","tipsMy":"..."}]}`
 
-  const user = `Create exactly ${count} unique ${skill} items for ${profile.name}, CEFR ${level} (${label.my}), date ${day}.
+  const list: Question[] = []
+  let offset = 0
+  while (offset < count) {
+    const n = Math.min(AI_CHUNK, count - offset)
+    const user = `Create exactly ${n} unique ${skill} items for ${profile.name}, CEFR ${level} (${label.my}), date ${day}, batch ${offset / AI_CHUNK + 1}.
 JSON shape: ${shape}
 Rules:
 - answer MUST be exactly one of the options (full text, not letter) when options exist
 - 4 distinct options for MCQ skills
-- Keep difficulty strictly at ${level} only (do NOT make items much easier like two levels below, or much harder like C1/C2 if learner is below that)
+- Keep difficulty strictly at ${level} only
 - Fresh content for ${day}`
 
-  const raw = (await chatJson(settings, system, user)) as Record<string, unknown>
-  const arr = Array.isArray(raw.questions) ? raw.questions : []
-  const list: Question[] = []
-  for (let i = 0; i < arr.length; i++) {
-    const q = normalizeQuestion(
-      arr[i] as Record<string, unknown>,
-      skill,
-      level,
-      i,
-      day,
-    )
-    if (q) list.push(q)
+    const raw = (await chatJson(settings, system, user)) as Record<string, unknown>
+    const arr = Array.isArray(raw.questions) ? raw.questions : []
+    for (let i = 0; i < arr.length; i++) {
+      const q = normalizeQuestion(
+        arr[i] as Record<string, unknown>,
+        skill,
+        level,
+        offset + i,
+        day,
+      )
+      if (q) list.push(q)
+    }
+    offset += n
   }
   return list
 }
@@ -366,6 +352,7 @@ export async function generateAiDailyPack(
   const settings = profile.tutorSettings
   const day = localDayKey()
   const questions: Partial<Record<Skill, Question[]>> = {}
+  const errors: string[] = []
 
   for (const skill of SKILLS) {
     onProgress?.(`${skill} မေးခွန်းများ generate လုပ်နေသည်…`)
@@ -378,8 +365,11 @@ export async function generateAiDailyPack(
         day,
       )
       if (list.length) questions[skill] = list
-    } catch {
-      // leave empty — local fallback later
+      else errors.push(`${skill}: AI ပြန်လာသော်လည်း မေးခွန်း validate မအောင်`)
+    } catch (e) {
+      errors.push(
+        `${skill}: ${e instanceof Error ? e.message : 'generate မအောင်'}`,
+      )
     }
   }
 
@@ -387,7 +377,9 @@ export async function generateAiDailyPack(
   let stories: AiStoryItem[] = []
   try {
     stories = await generateStories(settings, profile, day)
-  } catch {
+    if (!stories.length) errors.push('stories: အလွတ် / တိုလွန်း / invalid JSON')
+  } catch (e) {
+    errors.push(`stories: ${e instanceof Error ? e.message : 'fail'}`)
     stories = []
   }
 
@@ -395,13 +387,18 @@ export async function generateAiDailyPack(
   let vocab: VocabWord[] = []
   try {
     vocab = await generateVocab(settings, profile, day)
-  } catch {
+  } catch (e) {
+    errors.push(`vocab: ${e instanceof Error ? e.message : 'fail'}`)
     vocab = []
   }
 
   const anyQs = SKILLS.some((s) => (questions[s]?.length ?? 0) > 0)
   if (!anyQs && stories.length === 0) {
-    throw new Error('AI pack အလွတ်ဖြစ်နေသည် — API / model ကို စစ်ပါ')
+    const hint = errors[0] || 'unknown'
+    const rateHint = /rate limit|429/i.test(hint)
+      ? ' — .env မှာ RATE_MINUTE/RATE_HOUR တိုးပါ (daily pack ≈ ၇+ calls)'
+      : ''
+    throw new Error(`AI pack အလွတ် — ${hint}${rateHint}`)
   }
 
   return {
@@ -419,7 +416,7 @@ export async function generateAiWeeklyTest(
   onProgress?: AiProgressFn,
 ): Promise<WeeklyAiPack> {
   const settings = profile.tutorSettings
-  if (!canUseAiWeekly(settings)) {
+  if (!canUseAiWeeklyClient(settings)) {
     throw new Error('API key လိုသည် (Tutor Settings)')
   }
   const level = profile.currentLevel
@@ -441,7 +438,12 @@ JSON:
 ]}
 Rules: 4 options, answer exact option text, CEFR ${level}.`
 
-  const raw = (await chatJson(settings, system, user)) as Record<string, unknown>
+  const raw = (await chatJson(
+    settings,
+    system,
+    user,
+    'weekly',
+  )) as Record<string, unknown>
   const arr = Array.isArray(raw.questions) ? raw.questions : []
   const list: Question[] = []
   for (let i = 0; i < arr.length; i++) {

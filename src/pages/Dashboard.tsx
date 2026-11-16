@@ -101,8 +101,8 @@ export function Dashboard() {
         <section className="panel">
           <h2>၂ နာရီ အစီအစဉ် (နေ့တိုင်း အလိုအလျောက် ပြောင်း)</h2>
           <p className="muted" style={{ marginBottom: 10 }}>
-            Local bank သို့မဟုတ် AI key ဖြင့် နေ့စဉ် story + exercise အသစ်။ API key ကို
-            AI Tutor → Settings တွင် ထည့်ပါ။
+            Local bank သို့မဟုတ် owner AI proxy ဖြင့် နေ့စဉ် story + exercise အသစ်
+            (rate limit ရှိသည်)။
           </p>
           {plan.map((item) => (
             <div className="plan-item" key={`${item.skill}-${item.route}`}>

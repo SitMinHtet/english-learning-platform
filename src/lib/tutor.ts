@@ -1,6 +1,7 @@
 import { checkWriting } from './writingChecker'
 import { LEVEL_LABELS } from '../data/cefr'
-import type { ChatMessage, TutorSettings, UserProfile } from '../types'
+import { canUseCloudAi, chatCompletions } from './aiClient'
+import type { ChatMessage, UserProfile } from '../types'
 
 const SYSTEM_MY = `သင်သည် Path to C2 အင်္ဂလိပ်ဆရာ ဖြစ်သည်။
 ဘာသာစကား စည်းမျဉ်း: မြန်မာ နှင့် English သာ သုံးပါ။ အခြား မည်သည့်ဘာသာကိုမျှ မသုံးရ။
@@ -11,59 +12,35 @@ export async function askTutor(
   profile: UserProfile,
 ): Promise<string> {
   const settings = profile.tutorSettings
-  if (settings.useCloud && settings.apiKey.trim()) {
+  if (settings.useCloud && canUseCloudAi(settings)) {
     try {
-      return await askCloud(userText, profile, settings)
+      const history = profile.tutorChat.slice(-12).map((m) => ({
+        role: (m.role === 'assistant' ? 'assistant' : 'user') as
+          | 'assistant'
+          | 'user',
+        content: m.content,
+      }))
+      return await chatCompletions({
+        kind: 'tutor',
+        settings,
+        temperature: 0.4,
+        messages: [
+          {
+            role: 'system',
+            content: `${SYSTEM_MY}
+Student: ${profile.name}, CEFR ${profile.currentLevel} (${LEVEL_LABELS[profile.currentLevel].my}), target C2.
+Reply ONLY in Burmese (Myanmar) and English. Never use any other language.`,
+          },
+          ...history,
+          { role: 'user', content: userText },
+        ],
+      })
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'API error'
       return `⚠️ Cloud tutor မအောင်မြင်ပါ (${msg})။ Offline ဆရာဖြင့် ပြန်ဖြေပါသည်။\n\n${offlineReply(userText, profile)}`
     }
   }
   return offlineReply(userText, profile)
-}
-
-async function askCloud(
-  userText: string,
-  profile: UserProfile,
-  settings: TutorSettings,
-): Promise<string> {
-  const history = profile.tutorChat.slice(-12).map((m) => ({
-    role: m.role === 'assistant' ? 'assistant' : 'user',
-    content: m.content,
-  }))
-
-  const res = await fetch(`${settings.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${settings.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: settings.model,
-      temperature: 0.4,
-      messages: [
-        {
-          role: 'system',
-          content: `${SYSTEM_MY}
-Student: ${profile.name}, CEFR ${profile.currentLevel} (${LEVEL_LABELS[profile.currentLevel].my}), target C2.
-Reply ONLY in Burmese (Myanmar) and English. Never use any other language.`,
-        },
-        ...history,
-        { role: 'user', content: userText },
-      ],
-    }),
-  })
-
-  if (!res.ok) {
-    const t = await res.text()
-    throw new Error(`${res.status}: ${t.slice(0, 120)}`)
-  }
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
-  }
-  const content = data.choices?.[0]?.message?.content?.trim()
-  if (!content) throw new Error('Empty response')
-  return content
 }
 
 function offlineReply(userText: string, profile: UserProfile): string {
@@ -187,7 +164,7 @@ check: I go to school yesterday
 • check: နောက်မှာ စာရေးပြီး ပို့ → ပြင်ပေးမည်
 • C2 အစီအစဉ် / အသံထွက် / vocab မေးပါ
 
-Cloud AI သုံးချင်ရင် Tutor စာမျက်နှာ Settings တွင် API key ထည့်ပါ။`
+Cloud AI က public proxy ဖြင့် အလိုအလျောက် ချိတ်ထားသည် (rate limit ရှိသည်)။`
   }
 
   // Generic teaching response
@@ -208,7 +185,7 @@ Cloud AI သုံးချင်ရင် Tutor စာမျက်နှာ Set
 အကူအညီ ပိုတိကျအောင်:
 1) "present perfect ရှင်းပြပါ" ကဲ့သို့ ခေါင်းစဉ် ဖော်ပြပါ
 2) "check: …" ဖြင့် စာပြင်ခိုင်းပါ
-3) Settings တွင် API key ထည့်ပြီး Cloud AI ဖွင့်ပါ — ပိုလွတ်လပ်စွာ စကားပြောနိုင်သည်
+3) Tutor စာမျက်နှာတွင် Cloud AI ဖွင့်ထားကြောင်း စစ်ပါ
 
 ယနေ့ အကြံ: Vocab due cards ကို အရင်ရှင်းပြီး Writing တစ်ပုဒ် ရေးပါ။`
 }

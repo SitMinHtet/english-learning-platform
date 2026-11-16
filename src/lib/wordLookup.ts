@@ -1,4 +1,11 @@
 import type { TutorSettings } from '../types'
+import {
+  canUseAiLookup,
+  chatCompletions,
+  extractJsonObject,
+} from './aiClient'
+
+export { canUseAiLookup }
 
 export type WordSense = {
   word: string
@@ -90,77 +97,8 @@ export function isSkippableWord(word: string): boolean {
   return SKIP.has(w)
 }
 
-export function canUseAiLookup(settings: TutorSettings | null | undefined): boolean {
-  return !!settings?.apiKey?.trim()
-}
-
 function cacheKey(word: string, context: string): string {
   return `${normalizeLemma(word)}::${context.slice(0, 80)}`
-}
-
-function extractJson(text: string): unknown {
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start >= 0 && end > start) {
-    return JSON.parse(text.slice(start, end + 1))
-  }
-  return JSON.parse(text)
-}
-
-async function askAiJson(
-  settings: TutorSettings,
-  system: string,
-  user: string,
-): Promise<Record<string, unknown>> {
-  const base = settings.baseUrl.replace(/\/$/, '')
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${settings.apiKey}`,
-  }
-  const bodyBase = {
-    model: settings.model,
-    temperature: 0.2,
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ],
-  }
-
-  let res = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      ...bodyBase,
-      response_format: { type: 'json_object' },
-    }),
-  })
-
-  if (!res.ok) {
-    // Some providers reject response_format
-    res = await fetch(`${base}/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        ...bodyBase,
-        messages: [
-          { role: 'system', content: `${system}\nReturn ONLY valid JSON.` },
-          { role: 'user', content: user },
-        ],
-      }),
-    })
-  }
-
-  if (!res.ok) {
-    const t = await res.text()
-    throw new Error(`${res.status}: ${t.slice(0, 140)}`)
-  }
-
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
-  }
-  const raw = data.choices?.[0]?.message?.content?.trim()
-  if (!raw) throw new Error('Empty AI response')
-  return extractJson(raw) as Record<string, unknown>
 }
 
 function offlineSense(word: string): WordSense {
@@ -168,15 +106,14 @@ function offlineSense(word: string): WordSense {
   return {
     word: w,
     meaningMy:
-      'AI key မရှိသေးပါ — Tutor → Settings တွင် API key ထည့်ပြီး ပြန်နှိပ်ပါ။',
-    tipMy: 'Cloud AI / Daily AI အတွက် သုံးသော key ဖြင့် စကားလုံး အဓိပ္ပာယ် ရှာနိုင်သည်။',
+      'AI proxy မရပါ — အင်တာနက် / server ကို စစ်ပြီး ပြန်နှိပ်ပါ။',
+    tipMy: 'Public soft-launch တွင် owner proxy မှ AI အဓိပ္ပာယ် ရှာသည်။',
     source: 'offline',
   }
 }
 
 /**
- * Look up a word with AI (OpenAI-compatible), using sentence context.
- * Requires tutorSettings.apiKey.
+ * Look up a word with AI via public proxy (or advanced own key).
  */
 export async function lookupWordAi(
   raw: string,
@@ -222,7 +159,30 @@ JSON shape:
 }`
 
   try {
-    const obj = await askAiJson(settings!, system, user)
+    let raw: string
+    try {
+      raw = await chatCompletions({
+        kind: 'lookup',
+        settings: settings!,
+        temperature: 0.2,
+        responseFormatJson: true,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      })
+    } catch {
+      raw = await chatCompletions({
+        kind: 'lookup',
+        settings: settings!,
+        temperature: 0.2,
+        messages: [
+          { role: 'system', content: `${system}\nReturn ONLY valid JSON.` },
+          { role: 'user', content: user },
+        ],
+      })
+    }
+    const obj = extractJsonObject(raw) as Record<string, unknown>
     const sense: WordSense = {
       word: String(obj.word || word),
       meaningMy: String(obj.meaningMy || '').trim() || 'အဓိပ္ပာယ် မရပါ',
@@ -239,7 +199,7 @@ JSON shape:
     return {
       word,
       meaningMy: `AI ရှာမရပါ (${msg})`,
-      tipMy: 'API key / အင်တာနက် / model ကို Tutor Settings မှာ စစ်ပါ။',
+      tipMy: 'AI proxy / အင်တာနက် / rate limit ကို စစ်ပါ။',
       source: 'offline',
     }
   }

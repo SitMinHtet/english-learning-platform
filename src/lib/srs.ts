@@ -1,9 +1,4 @@
-import {
-  vocabByLevel,
-  getVocabWord,
-  VOCAB_BANK,
-  allVocabWords,
-} from '../data/vocab'
+import { vocabByLevel, getVocabWord, allVocabWords } from '../data/vocab'
 import type {
   CEFRLevel,
   VocabCardState,

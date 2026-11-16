@@ -78,7 +78,7 @@ export function GuidePage() {
           <div>
             <h3 style={{ fontSize: '1rem' }}>၄) AI Tutor (API) တိုးချဲ့</h3>
             <p className="muted">
-              Tutor Settings မှာ API key ထည့်ရင် Cloud ဆရာ + AI နေ့စဉ် pack သုံးနိုင်သည်။
+              Cloud ဆရာ + AI နေ့စဉ် pack က owner proxy မှ အလိုအလျောက် ရသည် (rate limit)။
             </p>
             <h3 style={{ fontSize: '1rem', marginTop: 14 }}>၅) Immersion အလေ့အကျင့်</h3>
             <p className="muted">

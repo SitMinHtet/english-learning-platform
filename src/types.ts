@@ -131,13 +131,13 @@ export interface ChatMessage {
 }
 
 export interface TutorSettings {
-  /** OpenAI-compatible API key (optional) */
+  /** Advanced only — public launch uses server proxy, leave empty */
   apiKey: string
-  /** e.g. https://api.openai.com/v1 */
+  /** Used only when VITE_AI_PROXY=0 (own-key mode) */
   baseUrl: string
   model: string
   useCloud: boolean
-  /** Use API key to generate fresh daily story + exercises */
+  /** Generate fresh daily story + exercises via proxy / key */
   useAiDaily: boolean
 }
 

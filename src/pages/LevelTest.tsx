@@ -5,13 +5,15 @@ import {
   buildPlacementTest,
   buildWeeklyTest,
   isAnswerCorrect,
+  placementLevelFromBands,
+  PLACEMENT_PER_LEVEL,
   scoreTest,
   withShuffledOptions,
 } from '../lib/testEngine'
 import { localDayKey } from '../lib/dateKey'
 import { speak } from '../lib/speech'
 import { TapWordText } from '../components/TapWordText'
-import { LEVEL_LABELS, SKILL_LABELS } from '../data/cefr'
+import { LEVELS, LEVEL_LABELS, SKILL_LABELS } from '../data/cefr'
 import type { LevelTestResult, Question, Skill } from '../types'
 
 interface Props {
@@ -28,8 +30,10 @@ export function LevelTest({ forceKind }: Props) {
     | 'weekly'
   const nav = useNavigate()
 
-  const locked = useRef<Question[] | null>(null)
-  const [ready, setReady] = useState(kind === 'placement')
+  // Keep questions in state (not only a ref) so the first paint always re-renders
+  const sessionKey = useRef('')
+  const [questions, setQuestions] = useState<Question[]>([])
+  const [ready, setReady] = useState(false)
   const [prepMsg, setPrepMsg] = useState('')
   const [aiWeekly, setAiWeekly] = useState(false)
   const [idx, setIdx] = useState(0)
@@ -41,10 +45,17 @@ export function LevelTest({ forceKind }: Props) {
   useEffect(() => {
     if (!profile) return
     let cancelled = false
+    const key = `${kind}|${profile.currentLevel}|${profile.placementDone}`
 
     if (kind === 'placement') {
-      if (!locked.current) {
-        locked.current = buildPlacementTest(profile.usedQuestionIds)
+      if (sessionKey.current !== key || questions.length === 0) {
+        const qs = buildPlacementTest(profile.usedQuestionIds)
+        sessionKey.current = key
+        setQuestions(qs)
+        setIdx(0)
+        setAnswers({})
+        setFinished(false)
+        setResult(null)
       }
       setReady(true)
       return
@@ -57,13 +68,17 @@ export function LevelTest({ forceKind }: Props) {
         if (!cancelled) setPrepMsg(m)
       })
       if (cancelled) return
-      if (res.questions && res.questions.length >= 8) {
-        locked.current = res.questions
-        setAiWeekly(true)
-      } else {
-        locked.current = buildWeeklyTest(profile)
-        setAiWeekly(false)
-      }
+      const qs =
+        res.questions && res.questions.length >= 8
+          ? res.questions
+          : buildWeeklyTest(profile)
+      setAiWeekly(!!(res.questions && res.questions.length >= 8))
+      sessionKey.current = key
+      setQuestions(qs)
+      setIdx(0)
+      setAnswers({})
+      setFinished(false)
+      setResult(null)
       setPrepMsg('')
       setReady(true)
     })()
@@ -88,7 +103,6 @@ export function LevelTest({ forceKind }: Props) {
     )
   }
 
-  const questions = locked.current ?? []
   const q = questions[idx]
     ? withShuffledOptions(questions[idx]!, localDayKey())
     : undefined
@@ -117,6 +131,11 @@ export function LevelTest({ forceKind }: Props) {
   }
 
   if (finished && result) {
+    const bands =
+      kind === 'placement'
+        ? placementLevelFromBands(questions, answers).bandPercents
+        : null
+
     return (
       <>
         <div className="page-head">
@@ -129,6 +148,11 @@ export function LevelTest({ forceKind }: Props) {
             <p>
               {LEVEL_LABELS[result.level].my} — {LEVEL_LABELS[result.level].canDo}
             </p>
+            {kind === 'placement' && (
+              <p className="muted" style={{ marginTop: 8 }}>
+                Level တိုင်း ≥၆၅% ရမှတ်ရှိသော အမြင့်ဆုံး band ကို သတ်မှတ်သည် (A1→C2)။
+              </p>
+            )}
           </div>
         </div>
         <div className="grid-2">
@@ -145,6 +169,23 @@ export function LevelTest({ forceKind }: Props) {
                 <p className="muted">မေးခွန်း {questions.length} ခု</p>
               </div>
             </div>
+            {bands && (
+              <div style={{ marginTop: 16 }}>
+                <h2 style={{ fontSize: '1rem' }}>Level band ရမှတ်</h2>
+                {LEVELS.map((lv) => (
+                  <div className="skill-row" key={lv}>
+                    <span>
+                      {lv}
+                      {lv === result.level ? ' ★' : ''}
+                    </span>
+                    <div className="bar">
+                      <span style={{ width: `${bands[lv] ?? 0}%` }} />
+                    </div>
+                    <span>{bands[lv] ?? '—'}%</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div style={{ marginTop: 20 }}>
               {(Object.keys(result.skillScores) as Skill[])
                 .filter((skill) => result.skillScores[skill] >= 0)
@@ -204,8 +245,30 @@ export function LevelTest({ forceKind }: Props) {
   if (!q) {
     return (
       <div className="panel">
-        <p>မေးခွန်း မလုံလောက်ပါ။</p>
-        {profile.placementDone ? <Link to="/">နောက်သို့</Link> : null}
+        <p>မေးခွန်း မလုံလောက်ပါ။ ({questions.length} ခု ရရှိ)</p>
+        {kind === 'placement' && (
+          <button
+            className="btn"
+            type="button"
+            style={{ marginTop: 12 }}
+            onClick={() => {
+              const qs = buildPlacementTest()
+              setQuestions(qs)
+              setIdx(0)
+              setAnswers({})
+              setFinished(false)
+              setResult(null)
+              setReady(true)
+            }}
+          >
+            Placement ပြန်ဆွဲမည်
+          </button>
+        )}
+        {profile.placementDone ? (
+          <Link className="btn ghost" to="/" style={{ marginLeft: 8 }}>
+            နောက်သို့
+          </Link>
+        ) : null}
       </div>
     )
   }
@@ -218,13 +281,14 @@ export function LevelTest({ forceKind }: Props) {
         <div>
           <div className="chip">
             {kind === 'placement'
-              ? 'ပထမဆုံး Level စစ်ဆေးမှု (Local)'
+              ? `Placement · A1→C2 · level တိုင်း ~${PLACEMENT_PER_LEVEL} မေး`
               : aiWeekly
                 ? 'တပတ်တခါ Level Test · AI'
                 : 'တပတ်တခါ Level Test · Local'}
           </div>
           <h1 style={{ marginTop: 10 }}>
             မေးခွန်း {idx + 1} / {questions.length}
+            {q ? ` · ${q.level}` : ''}
           </h1>
         </div>
       </div>

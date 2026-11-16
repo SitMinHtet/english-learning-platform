@@ -11,8 +11,9 @@ export const defaultTutorSettings = (): TutorSettings => ({
   apiKey: '',
   baseUrl: 'https://api.openai.com/v1',
   model: 'gpt-4o-mini',
-  useCloud: false,
-  useAiDaily: false,
+  // Public soft-launch: AI via owner proxy (no user key)
+  useCloud: true,
+  useAiDaily: true,
 })
 
 export function defaultProfile(name = 'Learner'): UserProfile {
@@ -75,10 +76,18 @@ export function normalizeProfile(raw: Partial<UserProfile> & { name?: string }):
       return []
     })(),
     tutorChat: Array.isArray(raw.tutorChat) ? raw.tutorChat : [],
-    tutorSettings: {
-      ...defaultTutorSettings(),
-      ...raw.tutorSettings,
-    },
+    tutorSettings: (() => {
+      const ts = {
+        ...defaultTutorSettings(),
+        ...raw.tutorSettings,
+      }
+      // Soft-launch: no personal key → use owner proxy (cloud + daily on)
+      if (!ts.apiKey?.trim()) {
+        ts.useCloud = true
+        ts.useAiDaily = true
+      }
+      return ts
+    })(),
     readStoryIds: Array.isArray(raw.readStoryIds) ? raw.readStoryIds : [],
     dailyPlanDate: raw.dailyPlanDate ?? null,
     dailyStoryId: raw.dailyStoryId ?? null,

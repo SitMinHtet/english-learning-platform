@@ -12,6 +12,7 @@ import { VocabPage } from './pages/VocabPage'
 import { TutorPage } from './pages/TutorPage'
 import { LibraryPage } from './pages/LibraryPage'
 import { SavedWordsPage } from './pages/SavedWordsPage'
+import { SoftLaunchGate } from './components/SoftLaunchGate'
 
 function Gate() {
   const { profile, ready } = useProfile()
@@ -63,9 +64,11 @@ function Gate() {
 export default function App() {
   return (
     <ProfileProvider>
-      <BrowserRouter>
-        <Gate />
-      </BrowserRouter>
+      <SoftLaunchGate>
+        <BrowserRouter>
+          <Gate />
+        </BrowserRouter>
+      </SoftLaunchGate>
     </ProfileProvider>
   )
 }

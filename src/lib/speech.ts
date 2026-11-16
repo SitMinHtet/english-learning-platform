@@ -317,7 +317,8 @@ export async function listenOnce(
   } finally {
     clearInterval(pulse)
     try {
-      activeRec?.abort()
+      const rec = activeRec as { abort?: () => void; stop?: () => void } | null
+      rec?.abort?.() ?? rec?.stop?.()
     } catch {
       /* ignore */
     }

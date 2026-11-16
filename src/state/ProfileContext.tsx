@@ -569,7 +569,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         return {
           ok: false,
           error:
-            'Tutor Settings တွင် API key ထည့်ပြီး “AI နေ့စဉ် pack” ကို ဖွင့်ပါ',
+            'AI နေ့စဉ် pack ပိတ်ထားသည် သို့မဟုတ် AI proxy မရပါ — Tutor Settings စစ်ပါ',
         }
       }
       try {
@@ -647,6 +647,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     profile?.placementDone,
     profile?.tutorSettings.useAiDaily,
     profile?.tutorSettings.apiKey,
+    profile?.tutorSettings.useCloud,
     profile?.dailyAiPack?.date,
     applyAiPackToProfile,
   ])

@@ -88,26 +88,79 @@ export function pickUniqueQuestions(
   return shuffle(picked).slice(0, count)
 }
 
-export function buildPlacementTest(usedIds: string[]): Question[] {
+/** Questions per CEFR band in placement (6 levels × 8 ≈ 48) */
+export const PLACEMENT_PER_LEVEL = 8
+
+/**
+ * Full diagnostic placement: A1→C2 ordered bands, skill-mixed MCQs.
+ * ~40–48 items so the assigned level is much more reliable than a short quiz.
+ */
+export function buildPlacementTest(_usedIds: string[] = []): Question[] {
   const picked: Question[] = []
-  const used = new Set(usedIds)
+  const seen = new Set<string>()
+
   for (const level of LEVELS) {
-    const pool = shuffle(
-      QUESTIONS.filter(
-        (q) => q.level === level && !used.has(q.id) && isTestFriendly(q),
-      ),
-    )
-    picked.push(...pool.slice(0, 3))
+    const pool = QUESTIONS.filter((q) => q.level === level && isTestFriendly(q))
+    const bySkill = new Map<Skill, Question[]>()
+    for (const q of shuffle(pool)) {
+      const list = bySkill.get(q.skill) ?? []
+      list.push(q)
+      bySkill.set(q.skill, list)
+    }
+    const skills = shuffle([...bySkill.keys()])
+    let added = 0
+    let guard = 0
+    while (added < PLACEMENT_PER_LEVEL && guard < PLACEMENT_PER_LEVEL * 8) {
+      guard++
+      let progressed = false
+      for (const sk of skills) {
+        if (added >= PLACEMENT_PER_LEVEL) break
+        const bucket = bySkill.get(sk)
+        const next = bucket?.shift()
+        if (!next || seen.has(next.id)) continue
+        seen.add(next.id)
+        picked.push(next)
+        added++
+        progressed = true
+      }
+      if (!progressed) break
+    }
   }
-  if (picked.length < 15) {
-    picked.push(
-      ...pickUniqueQuestions(
-        [...usedIds, ...picked.map((p) => p.id)],
-        15 - picked.length,
-      ),
-    )
+
+  // Keep band order (A1…C2); shuffle only inside each level for variety
+  const ordered: Question[] = []
+  for (const level of LEVELS) {
+    ordered.push(...shuffle(picked.filter((q) => q.level === level)))
   }
-  return shuffle(picked).slice(0, 18)
+  return ordered
+}
+
+/**
+ * Highest CEFR band where the learner still scores ≥ passRate.
+ * Stops climbing after the first weak band (classic placement staircase).
+ */
+export function placementLevelFromBands(
+  questions: Question[],
+  answers: Record<string, string>,
+  passRate = 0.65,
+): { level: CEFRLevel; bandPercents: Partial<Record<CEFRLevel, number>> } {
+  const bandPercents: Partial<Record<CEFRLevel, number>> = {}
+  let assigned: CEFRLevel = 'A1'
+
+  for (const level of LEVELS) {
+    const band = questions.filter((q) => q.level === level)
+    if (band.length === 0) continue
+    let ok = 0
+    for (const q of band) {
+      if (isAnswerCorrect(q, (answers[q.id] ?? '').trim())) ok++
+    }
+    const pct = ok / band.length
+    bandPercents[level] = Math.round(pct * 100)
+    if (pct >= passRate) assigned = level
+    else break
+  }
+
+  return { level: assigned, bandPercents }
 }
 
 export function buildWeeklyTest(profile: UserProfile): Question[] {
@@ -157,11 +210,16 @@ export function scoreTest(
         : -1
   }
 
+  const level =
+    kind === 'placement'
+      ? placementLevelFromBands(questions, answers).level
+      : levelFromScore(percent)
+
   return {
     id: `test-${Date.now()}`,
     kind,
     date: new Date().toISOString(),
-    level: levelFromScore(percent),
+    level,
     percent,
     skillScores: normalized,
     questionIds: questions.map((q) => q.id),

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import { useProfile } from '../state/ProfileContext'
 import { askTutor, makeMessage } from '../lib/tutor'
+import { canUseCloudAi } from '../lib/aiClient'
+import { isAiProxyEnabled } from '../lib/aiConfig'
 
 const QUICK = [
   'Present perfect ရှင်းပြပါ',
@@ -54,8 +56,8 @@ export function TutorPage() {
           <div className="chip">🤖 AI Tutor</div>
           <h1 style={{ marginTop: 10 }}>မြန်မာလို ဆရာ</h1>
           <p>
-            Offline ဆရာ အမြဲ အလုပ်လုပ်သည်။ API key ထည့်ရင် Cloud AI သို့ ချိတ်နိုင်သည်။
-            စကားဝိုင်းမှတ်တမ်းကို သိမ်းထားသည်။
+            Offline ဆရာ အမြဲ ရသည်။ Public soft-launch တွင် Cloud AI ကို owner proxy မှ
+            အလိုအလျောက် ချိတ်သည် (rate limit ရှိသည်)။
           </p>
         </div>
         <div className="flex wrap">
@@ -70,10 +72,11 @@ export function TutorPage() {
 
       {showSettings && (
         <section className="panel" style={{ marginBottom: 16 }}>
-          <h2>Cloud AI (ရွေးချယ်ရန်)</h2>
+          <h2>AI ဆက်တင်</h2>
           <p className="muted" style={{ marginBottom: 12 }}>
-            OpenAI-compatible API (OpenAI / OpenRouter)။ Key ကို ဤကွန်ပျူတာ browser မှာပဲ
-            သိမ်းသည်။ ဆရာ့အဖြေကို မြန်မာ + English သာ သုံးရန် သတ်မှတ်ထားသည်။
+            {isAiProxyEnabled()
+              ? 'Owner AI proxy သုံးနေသည် — သင့် API key မလိုပါ။ အလွန်အကျွံသုံးရင် rate limit တက်နိုင်သည်။'
+              : 'Proxy ပိတ်ထားသည် — အောက်တွင် ကိုယ်ပိုင် key ထည့်နိုင်သည်။'}
           </p>
           <label className="flex" style={{ gap: 8, marginBottom: 10 }}>
             <input
@@ -91,34 +94,41 @@ export function TutorPage() {
                 updateTutorSettings({ useAiDaily: e.target.checked })
               }
             />
-            AI-first နေ့စဉ် pack (skill တခု ~၂၄ မေး · stories ၃ · vocab) + weekly test
+            AI-first နေ့စဉ် pack + weekly test
           </label>
-          <input
-            style={fieldStyle}
-            type="password"
-            placeholder="API Key"
-            value={profile.tutorSettings.apiKey}
-            onChange={(e) => updateTutorSettings({ apiKey: e.target.value })}
-          />
-          <input
-            style={fieldStyle}
-            placeholder="Base URL (https://api.openai.com/v1)"
-            value={profile.tutorSettings.baseUrl}
-            onChange={(e) => updateTutorSettings({ baseUrl: e.target.value })}
-          />
-          <input
-            style={fieldStyle}
-            placeholder="Model (gpt-4o-mini)"
-            value={profile.tutorSettings.model}
-            onChange={(e) => updateTutorSettings({ model: e.target.value })}
-          />
+          {!isAiProxyEnabled() && (
+            <>
+              <input
+                style={fieldStyle}
+                type="password"
+                placeholder="API Key (advanced)"
+                value={profile.tutorSettings.apiKey}
+                onChange={(e) => updateTutorSettings({ apiKey: e.target.value })}
+              />
+              <input
+                style={fieldStyle}
+                placeholder="Base URL (https://api.openai.com/v1)"
+                value={profile.tutorSettings.baseUrl}
+                onChange={(e) => updateTutorSettings({ baseUrl: e.target.value })}
+              />
+              <input
+                style={fieldStyle}
+                placeholder="Model (gpt-4o-mini)"
+                value={profile.tutorSettings.model}
+                onChange={(e) => updateTutorSettings({ model: e.target.value })}
+              />
+            </>
+          )}
           <p className="muted" style={{ marginTop: 8 }}>
             ဆရာ:{' '}
-            {profile.tutorSettings.useCloud && profile.tutorSettings.apiKey
-              ? 'Cloud'
+            {profile.tutorSettings.useCloud && canUseCloudAi(profile.tutorSettings)
+              ? isAiProxyEnabled()
+                ? 'Cloud (proxy)'
+                : 'Cloud (ကိုယ်ပိုင် key)'
               : 'Offline'}{' '}
             · Daily:{' '}
-            {profile.tutorSettings.useAiDaily && profile.tutorSettings.apiKey
+            {profile.tutorSettings.useAiDaily &&
+            canUseCloudAi(profile.tutorSettings)
               ? 'AI generate'
               : 'Local bank'}
           </p>
