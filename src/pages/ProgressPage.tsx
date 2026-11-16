@@ -1,18 +1,12 @@
-import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useProfile } from '../state/ProfileContext'
 import { progressSummary } from '../lib/dailyPlan'
 import { LEVEL_LABELS, SKILL_LABELS } from '../data/cefr'
-import { vocabStats } from '../lib/srs'
 import type { Skill } from '../types'
 
 export function ProgressPage() {
-  const { profile, resetAll, exportData, importData } = useProfile()
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [importMsg, setImportMsg] = useState('')
+  const { profile, resetAll } = useProfile()
   if (!profile) return null
-
-  const vstats = vocabStats(profile)
 
   const summary = progressSummary(profile)
   const recentAttempts = [...profile.attempts].slice(-12).reverse()
@@ -139,49 +133,6 @@ export function ProgressPage() {
             ))}
           </ul>
         )}
-      </section>
-
-      <section className="panel" style={{ marginTop: 18 }}>
-        <h2>💾 မှတ်တမ်း သိမ်းဆည်းခြင်း</h2>
-        <p style={{ marginBottom: 10 }}>
-          <strong>npm run ပြန်ဖွင့်ရင် မပျက်ပါ။</strong> ဒေတာကို ဤဘရောက်ဇာ၏ localStorage +
-          IndexedDB တွင် သိမ်းထားသည်။ Project ပြန် build/run လုပ်ရုံဖြင့် အစမှ မဖြစ်ပါ။
-        </p>
-        <p className="muted" style={{ marginBottom: 12 }}>
-          နောက်ဆုံး သိမ်းချိန်: {new Date(profile.updatedAt).toLocaleString()} · Vocab ကတ်{' '}
-          {vstats.total} · Due {vstats.due}
-        </p>
-        <div className="feedback" style={{ marginBottom: 14 }}>
-          ပျက်နိုင်သော အခြေအနေများ: browser data ရှင်းခြင်း၊ Incognito, တခြား browser/ကွန်ပျူတာ။
-          ထို့ကြောင့် အောက်တွင် JSON backup ဒေါင်းလုပ်ထားပါ။
-        </div>
-        <div className="flex wrap">
-          <button className="btn" type="button" onClick={exportData}>
-            Backup ဒေါင်းလုပ်
-          </button>
-          <button
-            className="btn secondary"
-            type="button"
-            onClick={() => fileRef.current?.click()}
-          >
-            Backup ပြန်တင်
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={async (e) => {
-              const file = e.target.files?.[0]
-              if (!file) return
-              const text = await file.text()
-              const res = importData(text)
-              setImportMsg(res.ok ? '✅ Backup ပြန်တင်ပြီးပါပြီ' : `❌ ${res.error}`)
-              e.target.value = ''
-            }}
-          />
-        </div>
-        {importMsg && <p style={{ marginTop: 10 }}>{importMsg}</p>}
       </section>
 
       <section className="panel" style={{ marginTop: 18 }}>

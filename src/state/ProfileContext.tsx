@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -41,10 +42,16 @@ import {
 } from '../lib/aiDaily'
 import { localDayKey, localWeekKey, msUntilNextLocalMidnight } from '../lib/dateKey'
 import { newCard } from '../lib/srs'
+import {
+  isLoggedIn,
+  pushCloudProfile,
+  reconcileAfterLogin,
+} from '../lib/cloudSync'
 
 interface ProfileCtx {
   profile: UserProfile | null
   ready: boolean
+  cloudStatus: string
   startOnboarding: (name: string) => void
   completePlacement: (result: LevelTestResult) => void
   completeWeekly: (result: LevelTestResult) => void
@@ -84,6 +91,12 @@ interface ProfileCtx {
   exportData: () => void
   importData: (fileText: string) => { ok: boolean; error?: string }
   resetAll: () => void
+  applyCloudProfile: () => Promise<{
+    ok: boolean
+    action?: 'pulled' | 'pushed' | 'kept'
+    error?: string
+  }>
+  pushCloudNow: () => Promise<{ ok: boolean; error?: string }>
 }
 
 const Ctx = createContext<ProfileCtx | null>(null)
@@ -103,19 +116,44 @@ function speakingSkillFromId(questionId: string, hint?: Skill): Skill {
 export function ProfileProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(() => loadProfile())
   const [ready, setReady] = useState(false)
+  const [cloudStatus, setCloudStatus] = useState('')
+  const syncTimer = useRef<number | null>(null)
 
-  const persist = useCallback((p: UserProfile) => {
-    const saved = saveProfile(p)
-    setProfile(saved)
+  const scheduleCloudPush = useCallback((p: UserProfile) => {
+    if (!isLoggedIn()) return
+    if (syncTimer.current) window.clearTimeout(syncTimer.current)
+    syncTimer.current = window.setTimeout(() => {
+      void pushCloudProfile(p)
+        .then(() => setCloudStatus(`Cloud sync · ${new Date().toLocaleTimeString()}`))
+        .catch((e) =>
+          setCloudStatus(
+            e instanceof Error ? `Cloud sync မရ: ${e.message}` : 'Cloud sync မရ',
+          ),
+        )
+    }, 2500)
   }, [])
 
-  const persistUpdate = useCallback((fn: (p: UserProfile) => UserProfile) => {
-    setProfile((prev) => {
-      if (!prev) return prev
-      const next = fn(prev)
-      return saveProfile(next)
-    })
-  }, [])
+  const persist = useCallback(
+    (p: UserProfile) => {
+      const saved = saveProfile(p)
+      setProfile(saved)
+      scheduleCloudPush(saved)
+      return saved
+    },
+    [scheduleCloudPush],
+  )
+
+  const persistUpdate = useCallback(
+    (fn: (p: UserProfile) => UserProfile) => {
+      setProfile((prev) => {
+        if (!prev) return prev
+        const next = saveProfile(fn(prev))
+        scheduleCloudPush(next)
+        return next
+      })
+    },
+    [scheduleCloudPush],
+  )
 
   const applyDaily = useCallback((p: UserProfile) => {
     const next = refreshDailyPackIfNeeded(p)
@@ -149,6 +187,24 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
           vocabCards: Array.isArray(raw?.cards) ? raw.cards : [],
         }
       }
+
+      // Returning visitor already logged in → reconcile with cloud
+      if (isLoggedIn()) {
+        try {
+          const synced = await reconcileAfterLogin(p)
+          p = synced.profile
+          if (!cancelled) {
+            setCloudStatus(
+              synced.action === 'pulled'
+                ? 'Cloud progress ပြန်ယူပြီး'
+                : 'Cloud နှင့် ချိတ်ပြီး',
+            )
+          }
+        } catch {
+          // keep local
+        }
+      }
+
       if (p && p.placementDone) {
         p = applyDaily(p)
       } else if (p) {
@@ -761,10 +817,47 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     setProfile(null)
   }, [])
 
+  const applyCloudProfile = useCallback(async () => {
+    try {
+      const local = loadProfile()
+      const res = await reconcileAfterLogin(local)
+      const saved = saveProfile(res.profile)
+      setProfile(saved)
+      setCloudStatus(
+        res.action === 'pulled'
+          ? 'Cloud → ဤ device'
+          : res.action === 'pushed'
+            ? 'ဤ device → Cloud'
+            : 'Synced',
+      )
+      return { ok: true, action: res.action }
+    } catch (e) {
+      const error = e instanceof Error ? e.message : 'Sync မအောင်မြင်ပါ'
+      setCloudStatus(error)
+      return { ok: false, error }
+    }
+  }, [])
+
+  const pushCloudNow = useCallback(async () => {
+    const p = profile ?? loadProfile()
+    if (!p) return { ok: false, error: 'Profile မရှိပါ' }
+    if (!isLoggedIn()) return { ok: false, error: 'Google login လိုသည်' }
+    try {
+      await pushCloudProfile(p)
+      setCloudStatus(`Cloud sync · ${new Date().toLocaleTimeString()}`)
+      return { ok: true }
+    } catch (e) {
+      const error = e instanceof Error ? e.message : 'Upload မရပါ'
+      setCloudStatus(error)
+      return { ok: false, error }
+    }
+  }, [profile])
+
   const value = useMemo(
     () => ({
       profile,
       ready,
+      cloudStatus,
       startOnboarding,
       completePlacement,
       completeWeekly,
@@ -790,10 +883,13 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       exportData,
       importData,
       resetAll,
+      applyCloudProfile,
+      pushCloudNow,
     }),
     [
       profile,
       ready,
+      cloudStatus,
       startOnboarding,
       completePlacement,
       completeWeekly,
@@ -819,6 +915,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       exportData,
       importData,
       resetAll,
+      applyCloudProfile,
+      pushCloudNow,
     ],
   )
 

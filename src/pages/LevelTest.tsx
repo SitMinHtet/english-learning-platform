@@ -32,6 +32,9 @@ export function LevelTest({ forceKind }: Props) {
 
   // Keep questions in state (not only a ref) so the first paint always re-renders
   const sessionKey = useRef('')
+  /** Once a test is built, do not rebuild when profile.currentLevel changes mid-session */
+  const sessionLocked = useRef(false)
+  const resultSaved = useRef(false)
   const [questions, setQuestions] = useState<Question[]>([])
   const [ready, setReady] = useState(false)
   const [prepMsg, setPrepMsg] = useState('')
@@ -47,10 +50,16 @@ export function LevelTest({ forceKind }: Props) {
     let cancelled = false
     const key = `${kind}|${profile.currentLevel}|${profile.placementDone}`
 
+    // Saving weekly result updates currentLevel → would restart the quiz forever
+    if (sessionLocked.current && sessionKey.current.startsWith(`${kind}|`)) {
+      return
+    }
+
     if (kind === 'placement') {
       if (sessionKey.current !== key || questions.length === 0) {
         const qs = buildPlacementTest(profile.usedQuestionIds)
         sessionKey.current = key
+        sessionLocked.current = true
         setQuestions(qs)
         setIdx(0)
         setAnswers({})
@@ -74,6 +83,7 @@ export function LevelTest({ forceKind }: Props) {
           : buildWeeklyTest(profile)
       setAiWeekly(!!(res.questions && res.questions.length >= 8))
       sessionKey.current = key
+      sessionLocked.current = true
       setQuestions(qs)
       setIdx(0)
       setAnswers({})
@@ -86,7 +96,7 @@ export function LevelTest({ forceKind }: Props) {
     return () => {
       cancelled = true
     }
-    // only re-run when kind / level changes
+    // only re-run when kind / level changes (locked while a session is active)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, profile?.currentLevel, profile?.placementDone])
 
@@ -107,15 +117,28 @@ export function LevelTest({ forceKind }: Props) {
     ? withShuffledOptions(questions[idx]!, localDayKey())
     : undefined
 
+  const persistResult = (res: LevelTestResult) => {
+    if (resultSaved.current) return
+    resultSaved.current = true
+    if (kind === 'placement') completePlacement(res)
+    else completeWeekly(res)
+  }
+
   const select = (answer: string) => {
     if (!q) return
     const nextAnswers = { ...answers, [q.id]: answer }
     setAnswers(nextAnswers)
     if (idx + 1 >= questions.length) {
-      const res = scoreTest(questions, nextAnswers, kind)
+      const res = scoreTest(
+        questions,
+        nextAnswers,
+        kind,
+        profile.currentLevel,
+      )
       setResult(res)
       setFinished(true)
-      if (kind === 'weekly') completeWeekly(res)
+      // Save as soon as the test ends (sessionLocked prevents quiz restart)
+      if (kind === 'weekly') persistResult(res)
     } else {
       setIdx((i) => i + 1)
     }
@@ -123,10 +146,8 @@ export function LevelTest({ forceKind }: Props) {
 
   const finishAndGo = () => {
     if (!result) return
-    if (kind === 'placement') {
-      setSaving(true)
-      completePlacement(result)
-    }
+    setSaving(true)
+    persistResult(result)
     nav('/')
   }
 
@@ -148,9 +169,15 @@ export function LevelTest({ forceKind }: Props) {
             <p>
               {LEVEL_LABELS[result.level].my} — {LEVEL_LABELS[result.level].canDo}
             </p>
-            {kind === 'placement' && (
+            {kind === 'placement' ? (
               <p className="muted" style={{ marginTop: 8 }}>
-                Level တိုင်း ≥၆၅% ရမှတ်ရှိသော အမြင့်ဆုံး band ကို သတ်မှတ်သည် (A1→C2)။
+                A1 မှ စ၍ band တိုင်း ≥၆၅% (၈ ခုတွင် အနည်းဆုံး ၆ ခု) ရမှမှ နောက် level တက်သည်။
+                ပထမဆုံး အားနည်း band တွင် ရပ်ပြီး နောက်ဆုံး အောင်မြင်သော level ကို သတ်မှတ်သည်။
+              </p>
+            ) : (
+              <p className="muted" style={{ marginTop: 8 }}>
+                Weekly test သည် လက်ရှိ level အနီး (±၁) တွင် စစ်သည်။ ≥၇၅% = တစ်ဆင့်တက်၊ ≤၄၅% =
+                တစ်ဆင့်ကျ၊ ကြား = အဆင့်မပြောင်း။
               </p>
             )}
           </div>
@@ -253,6 +280,8 @@ export function LevelTest({ forceKind }: Props) {
             style={{ marginTop: 12 }}
             onClick={() => {
               const qs = buildPlacementTest()
+              sessionKey.current = `placement|retry|${Date.now()}`
+              sessionLocked.current = true
               setQuestions(qs)
               setIdx(0)
               setAnswers({})

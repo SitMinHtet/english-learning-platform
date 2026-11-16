@@ -1,6 +1,8 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useProfile } from '../state/ProfileContext'
 import { needsWeeklyTest } from '../lib/dailyPlan'
+import { CloudAccount } from './CloudAccount'
+import { isCloudSyncConfigured } from '../lib/cloudSync'
 
 const links = [
   { to: '/', label: 'Dashboard', end: true },
@@ -43,18 +45,21 @@ export function Layout() {
           ))}
         </nav>
         {profile && (
-          <div className="muted" style={{ marginTop: 'auto', fontSize: '0.85rem' }}>
+          <div className="sidebar-foot muted">
             <div>
               <strong>{profile.name}</strong>
             </div>
-            <div>
-              Level {profile.currentLevel} → C2
-            </div>
+            <div>Level {profile.currentLevel} → C2</div>
             <div>🔥 {profile.streak} ရက် streak</div>
           </div>
         )}
       </aside>
       <main className="main">
+        {isCloudSyncConfigured() && (
+          <div className="main-topbar">
+            <CloudAccount variant="chip" />
+          </div>
+        )}
         <Outlet />
       </main>
     </div>

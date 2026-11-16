@@ -23,6 +23,14 @@ import {
   publicError,
   safeEqual,
 } from './security.mjs'
+import {
+  bearerUser,
+  cloudAuthEnabled,
+  getGoogleClientId,
+  signSession,
+  verifyGoogleIdToken,
+} from './auth.mjs'
+import { readCloudProfile, writeCloudProfile } from './cloudStore.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
@@ -130,10 +138,10 @@ function setCors(res, req) {
     res.setHeader('Access-Control-Allow-Origin', origin)
     res.setHeader('Vary', 'Origin')
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS')
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, X-Access-Code, X-Client-Id, X-App-Token',
+    'Content-Type, Authorization, X-Access-Code, X-Client-Id, X-App-Token',
   )
   res.setHeader('Access-Control-Max-Age', '86400')
   res.setHeader('X-Content-Type-Options', 'nosniff')
@@ -441,6 +449,96 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
+    // ——— Cloud auth + profile sync ———
+    if (req.method === 'GET' && url.pathname === '/api/auth/status') {
+      sendJson(res, 200, {
+        ok: true,
+        google: cloudAuthEnabled(),
+        clientId: cloudAuthEnabled() ? getGoogleClientId() : '',
+      })
+      return
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/auth/google') {
+      if (!cloudAuthEnabled()) {
+        sendJson(res, 503, { error: 'Google login not configured on server' })
+        return
+      }
+      const body = await readBody(req, 16_000)
+      const idToken = String(body.idToken || body.credential || '').trim()
+      if (!idToken) {
+        sendJson(res, 400, { error: 'idToken required' })
+        return
+      }
+      const googleUser = await verifyGoogleIdToken(idToken)
+      const token = signSession(googleUser)
+      const existing = readCloudProfile(googleUser.sub)
+      sendJson(res, 200, {
+        token,
+        user: {
+          sub: googleUser.sub,
+          email: googleUser.email,
+          name: googleUser.name,
+          picture: googleUser.picture,
+        },
+        hasCloudProfile: !!existing?.profile,
+        cloudUpdatedAt: existing?.updatedAt || null,
+      })
+      return
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/me/profile') {
+      const user = bearerUser(req)
+      if (!user) {
+        sendJson(res, 401, { error: 'Login required' })
+        return
+      }
+      const row = readCloudProfile(user.sub)
+      if (!row?.profile) {
+        sendJson(res, 404, { error: 'No cloud profile yet', user })
+        return
+      }
+      sendJson(res, 200, {
+        user: {
+          sub: row.sub,
+          email: row.email,
+          name: row.name,
+          picture: row.picture,
+        },
+        updatedAt: row.updatedAt,
+        profile: row.profile,
+      })
+      return
+    }
+
+    if (req.method === 'PUT' && url.pathname === '/api/me/profile') {
+      const user = bearerUser(req)
+      if (!user) {
+        sendJson(res, 401, { error: 'Login required' })
+        return
+      }
+      // Profiles can be large (attempts, vocab, AI packs)
+      const body = await readBody(req, 2_500_000)
+      const profile = body.profile
+      if (!profile || typeof profile !== 'object') {
+        sendJson(res, 400, { error: 'profile object required' })
+        return
+      }
+      // Never store personal API keys in cloud
+      if (profile.tutorSettings && typeof profile.tutorSettings === 'object') {
+        profile.tutorSettings = {
+          ...profile.tutorSettings,
+          apiKey: '',
+        }
+      }
+      const saved = writeCloudProfile(user.sub, user, profile)
+      sendJson(res, 200, {
+        ok: true,
+        updatedAt: saved.updatedAt,
+      })
+      return
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/ai/chat') {
       const originGate = checkOriginGate(req)
       if (!originGate.ok) {
@@ -513,6 +611,9 @@ server.listen(PORT, () => {
   console.log(`  origins: ${ORIGIN_CFG.any ? '* (set CORS_ORIGIN in prod!)' : ORIGIN_CFG.list.join(', ')}`)
   console.log(`  app token: ${PROXY_APP_TOKEN ? 'required' : 'off'}`)
   console.log(`  invite: ${SOFT_LAUNCH_CODE ? 'required' : 'off'}`)
+  console.log(
+    `  google sync: ${cloudAuthEnabled() ? 'ON' : 'off (set GOOGLE_CLIENT_ID)'}`,
+  )
   console.log(
     `  limits: ${LIMITS.minute}/min ${LIMITS.hour}/hr ${LIMITS.day}/day/ip · global ${LIMITS.global_day}/day`,
   )

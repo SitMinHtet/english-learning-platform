@@ -77,6 +77,7 @@ export const SKILL_LABELS: Record<
   pronunciation: { en: 'Pronunciation', my: 'အသံထွက်', icon: '🔊' },
 }
 
+/** Absolute % → CEFR (placement-style diagnostics only — not for weekly). */
 export function levelFromScore(percent: number): CEFRLevel {
   if (percent >= 92) return 'C2'
   if (percent >= 80) return 'C1'
@@ -84,6 +85,22 @@ export function levelFromScore(percent: number): CEFRLevel {
   if (percent >= 52) return 'B1'
   if (percent >= 35) return 'A2'
   return 'A1'
+}
+
+/**
+ * Weekly tests are written at the learner's current band (±1).
+ * Remapping raw % onto the full CEFR scale incorrectly dumps strong learners to A1.
+ * Adjust at most one level up/down from current.
+ */
+export function adjustLevelByWeeklyScore(
+  current: CEFRLevel,
+  percent: number,
+): CEFRLevel {
+  const i = LEVELS.indexOf(current)
+  if (i < 0) return current
+  if (percent >= 75) return LEVELS[Math.min(i + 1, LEVELS.length - 1)]!
+  if (percent <= 45) return LEVELS[Math.max(i - 1, 0)]!
+  return current
 }
 
 export function nextLevel(level: CEFRLevel): CEFRLevel | null {

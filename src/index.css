@@ -77,14 +77,31 @@ p {
 .sidebar {
   position: sticky;
   top: 0;
+  align-self: start;
   height: 100vh;
+  max-height: 100dvh;
   padding: 28px 20px;
   border-right: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(12px);
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sidebar > .brand,
+.sidebar-foot {
+  flex-shrink: 0;
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  padding-top: 8px;
+  font-size: 0.85rem;
 }
 
 .brand {
@@ -109,18 +126,19 @@ p {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .nav a {
   padding: 12px 14px;
   border-radius: 12px;
   color: var(--ink-soft);
-  transition: background 0.2s, transform 0.2s;
+  transition: background 0.2s;
 }
 
 .nav a:hover {
   background: var(--paper-2);
-  transform: translateX(2px);
 }
 
 .nav a.active {
@@ -132,6 +150,177 @@ p {
 .main {
   padding: 28px 36px 64px;
   max-width: 1100px;
+}
+
+.main-topbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  margin: -4px 0 16px;
+}
+
+.cloud-chip-wrap {
+  position: relative;
+  z-index: 40;
+}
+
+.cloud-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(320px, 100%);
+  padding: 6px 10px 6px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 24px rgba(20, 32, 28, 0.08);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.cloud-chip:hover {
+  border-color: var(--accent);
+  box-shadow: 0 10px 28px rgba(15, 122, 95, 0.12);
+}
+
+.cloud-chip--guest {
+  border-color: var(--accent);
+  background: linear-gradient(135deg, #eef8f4 0%, #ffffff 70%);
+}
+
+.cloud-chip__badge {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #0b5c47;
+  background: var(--accent-soft);
+  padding: 8px 10px;
+  border-radius: 999px;
+}
+
+.cloud-chip__hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cloud-chip__menu--guest {
+  width: min(320px, calc(100vw - 32px));
+  padding: 14px;
+}
+
+.cloud-chip__blurb {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.cloud-chip__google {
+  min-height: 44px;
+}
+
+.cloud-chip__msg {
+  margin: 10px 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.cloud-chip__avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.cloud-chip__avatar--ph {
+  display: inline-block;
+  background: var(--accent-soft);
+}
+
+.cloud-chip__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.cloud-chip__name {
+  font-weight: 700;
+  font-size: 0.88rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cloud-chip__status {
+  font-size: 0.72rem;
+  color: var(--ok);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cloud-chip__caret {
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin-left: 2px;
+}
+
+.cloud-chip__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 210px;
+  padding: 8px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #fff;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: rise 0.2s ease both;
+}
+
+.cloud-chip__email {
+  padding: 8px 10px 10px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+.cloud-chip__item {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font: inherit;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.cloud-chip__item:hover {
+  background: var(--paper-2);
+}
+
+.cloud-chip__item:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 
 .page-head {
@@ -498,6 +687,124 @@ textarea.editor {
   border: 1px solid var(--line);
 }
 
+.hero-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0 16px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.hero-divider::before,
+.hero-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.cloud-banner {
+  border-radius: 16px;
+  padding: 18px 18px 16px;
+  border: 2px solid var(--ink);
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(20, 32, 28, 0.06);
+}
+
+.cloud-banner--return {
+  border-color: var(--accent-2);
+  background: linear-gradient(165deg, #fff8f3 0%, #ffffff 55%);
+}
+
+.cloud-banner--save {
+  border-color: var(--accent);
+  background: linear-gradient(165deg, #eef8f4 0%, #ffffff 55%);
+}
+
+.cloud-banner--on {
+  border-color: var(--ok);
+  background: #f3faf6;
+}
+
+.cloud-banner__eyebrow {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: rgba(20, 32, 28, 0.06);
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 10px;
+}
+
+.cloud-banner--return .cloud-banner__eyebrow {
+  background: #f3e0d4;
+  color: #8a3d14;
+}
+
+.cloud-banner--save .cloud-banner__eyebrow {
+  background: var(--accent-soft);
+  color: #0b5c47;
+}
+
+.cloud-banner__title {
+  font-family: var(--display);
+  font-size: 1.15rem;
+  margin: 0 0 8px;
+  line-height: 1.35;
+}
+
+.cloud-banner__text {
+  margin: 0 0 14px;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+.cloud-banner__google {
+  min-height: 44px;
+}
+
+.cloud-banner__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cloud-banner__avatar {
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.cloud-banner__avatar--ph {
+  width: 40px;
+  height: 40px;
+  background: var(--paper-2);
+}
+
+.cloud-banner__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.9rem;
+}
+
+.cloud-banner__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cloud-banner__status {
+  margin: 12px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 @keyframes rise {
   from {
     opacity: 0;
@@ -753,12 +1060,18 @@ textarea.editor {
   .sidebar {
     position: relative;
     height: auto;
+    max-height: none;
+    overflow: visible;
     border-right: none;
     border-bottom: 1px solid var(--line);
   }
   .nav {
     flex-direction: row;
     flex-wrap: wrap;
+    flex: none;
+  }
+  .sidebar-foot {
+    margin-top: 0;
   }
   .grid-2,
   .grid-3,

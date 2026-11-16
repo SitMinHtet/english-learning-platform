@@ -1,5 +1,10 @@
 import { QUESTIONS } from '../data/questions'
-import { LEVELS, LEVEL_ORDER, emptySkillScores, levelFromScore } from '../data/cefr'
+import {
+  LEVELS,
+  LEVEL_ORDER,
+  adjustLevelByWeeklyScore,
+  emptySkillScores,
+} from '../data/cefr'
 import type {
   CEFRLevel,
   LevelTestResult,
@@ -185,6 +190,7 @@ export function scoreTest(
   questions: Question[],
   answers: Record<string, string>,
   kind: 'placement' | 'weekly',
+  currentLevel: CEFRLevel = 'A1',
 ): LevelTestResult {
   const skillScores = emptySkillScores(0)
   const skillTotals = emptySkillScores(0)
@@ -213,7 +219,7 @@ export function scoreTest(
   const level =
     kind === 'placement'
       ? placementLevelFromBands(questions, answers).level
-      : levelFromScore(percent)
+      : adjustLevelByWeeklyScore(currentLevel, percent)
 
   return {
     id: `test-${Date.now()}`,
